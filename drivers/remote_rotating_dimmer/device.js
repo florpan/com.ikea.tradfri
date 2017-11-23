@@ -8,11 +8,13 @@ const maxValue = 255;
 class RemoteRotatingDimmer extends ZigBeeDevice {
 
 	onMeshInit() {
-		this.moving = false;
-		this.movingSince = null;
-		this.moveDirection = null;
-		this.rate = null;
 		this.value = 255;
+		this.moveRate = 0;
+		this.sensitivity = -1;
+		this.updateSpeedMs = 200;
+		this.movesInaRow = 0;
+		this.sensativityPerUpdate = 0;
+		this.updateSensativity();
 
 		// Register report listeners
 		this.registerReportListener('genLevelCtrl', 'move', this.moveCommandParser.bind(this));
@@ -20,20 +22,48 @@ class RemoteRotatingDimmer extends ZigBeeDevice {
 		this.registerReportListener('genLevelCtrl', 'stop', this.stopCommandParser.bind(this));
 		this.registerReportListener('genLevelCtrl', 'stopWithOnOff', this.stopCommandParser.bind(this));
 		this.registerReportListener('genLevelCtrl', 'moveToLevelWithOnOff', payload => {
+			//this.log('moving to level',payload);			
 			this.value = payload.level;
 		});
 
 		// Register dimmer_rotated Flow Card Device Trigger
 		this.dimmerRotatedTriggerDevice = new Homey.FlowCardTriggerDevice('dimmer_rotated');
 		this.dimmerRotatedTriggerDevice.register();
+		this.log('init',{sens: this.sensitivity, spd: this.updateSpeedMs, max:maxValue});
+		this.timer = setInterval(() => {
+			if(this.moveRate != 0){
+				this.value += this.moveRate;
+				//this.log('update, value ' + this.value);
+				if(this.value > maxValue){
+					this.value = maxValue;
+					this.moveRate = 0;
+				} else if(this.value < 0){
+					this.value = 0;
+					this.moveRate = 0;
+				}
+				const parsedValue = Math.round(this.value * 100.0 / maxValue) / 100;
+				
+				return this.dimmerRotatedTriggerDevice.trigger(this, { value: parsedValue }, null)
+					//.then(() => this.log(`triggered dimmer_rotated, value ${parsedValue}`))
+					.catch(err => this.error('Error triggering dimmer_rotated', err));
+				
+			}
+		},this.updateSpeedMs);
 
-		// Create debouncer for trigger Flow
-		this.triggerDimmerRotatedFlow = this.debounce(() => {
-			const parsedValue = Math.round(this.value / maxValue * 100) / 100;
-			return this.dimmerRotatedTriggerDevice.trigger(this, { value: parsedValue }, null)
-				.then(() => this.log(`triggered dimmer_rotated, value ${parsedValue}`))
-				.catch(err => this.error('Error triggering dimmer_rotated', err));
-		}, 1000);
+	}
+
+	updateSensativity(){
+		var s = this.getSetting('sensitivity');
+		if(s && !isNaN(s)) {
+			if(s == this.sensitivity)
+				return;
+			this.sensitivity = s;
+		}
+		if(!this.sensitivity || isNaN(this.sensitivity)){
+			this.sensitivity = 1;
+		}
+		this.log('sensativity adjusted ' + this.sensitivity);
+		this.sensativityPerUpdate = this.sensitivity*this.updateSpeedMs / 1000.0;
 	}
 
 	/**
@@ -42,11 +72,11 @@ class RemoteRotatingDimmer extends ZigBeeDevice {
 	 * @returns {*}
 	 */
 	moveCommandParser(payload) {
-		this.moving = true;
-		this.movingSince = Date.now();
-		this.moveDirection = payload.movemode === 0 ? 1 : -1;
-		this.rate = payload.rate;
-		return this.triggerDimmerRotatedFlow();
+		this.updateSensativity();
+		this.moveRate = (-2.0*payload.movemode + 1.0) * this.sensativityPerUpdate * payload.rate;
+		this.movesInaRow++;
+		if(this.movesInaRow > 10){ stop(); } //to avoid bug-looking thingy where stop is never called
+		//this.log('moving ' + this.moveRate + ' -- ' + this.movesInaRow);
 	}
 
 	/**
@@ -54,48 +84,9 @@ class RemoteRotatingDimmer extends ZigBeeDevice {
 	 * @returns {*}
 	 */
 	stopCommandParser() {
-		if (this.moving === true || Date.now() - this.movingSince < 3000) {
-			const sensitivity = this.getSetting('sensitivity');
-
-			let delta = 0;
-			if (typeof sensitivity === 'number' && !isNaN(sensitivity) && sensitivity > 0.1) {
-				delta = (Date.now() - this.movingSince) / 1000 * this.rate * sensitivity;
-			} else {
-				delta = (Date.now() - this.movingSince) / 1000 * this.rate;
-			}
-
-			this.value = this.value + delta * this.moveDirection;
-
-			if (this.value > maxValue) this.value = maxValue;
-			if (this.value < 0) this.value = 0;
-
-			this.moving = false;
-			this.movingSince = null;
-		}
-		return this.triggerDimmerRotatedFlow();
-	}
-
-	/**
-	 * Plain JS implementation of Underscore's _.debounce.
-	 * @param func
-	 * @param wait
-	 * @param immediate
-	 * @returns {Function}
-	 */
-	debounce(func, wait, immediate) {
-		let timeout;
-		return function () {
-			let context = this,
-				args = arguments;
-			const later = function () {
-				timeout = null;
-				if (!immediate) func.apply(context, args);
-			};
-			const callNow = immediate && !timeout;
-			clearTimeout(timeout);
-			timeout = setTimeout(later, wait);
-			if (callNow) func.apply(context, args);
-		};
+		this.moveRate = 0;
+		this.movesInaRow = 0;
+		//this.log('stop',this.moveRate);
 	}
 }
 
