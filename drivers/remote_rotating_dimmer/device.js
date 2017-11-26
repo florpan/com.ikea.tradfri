@@ -8,10 +8,11 @@ const maxValue = 255;
 class RemoteRotatingDimmer extends ZigBeeDevice {
 
 	onMeshInit() {
+		//this._debugEnabled = true;
 		this.value = 255;
 		this.moveRate = 0;
 		this.sensitivity = -1;
-		this.updateSpeedMs = 200;
+		this.updateSpeedMs = 250;
 		this.movesInaRow = 0;
 		this.sensativityPerUpdate = 0;
 		this.updateSensativity();
@@ -25,6 +26,30 @@ class RemoteRotatingDimmer extends ZigBeeDevice {
 			//this.log('moving to level',payload);			
 			this.value = payload.level;
 		});
+		//possible listerners..
+		//this.registerReportListener('genOnOff', 'move', this.moveCommandParser.bind(this));
+		//this.registerReportListener('genAlarms', 'move', this.moveCommandParser.bind(this));
+		//this.registerReportListener('genOta', 'move', this.moveCommandParser.bind(this));
+		//this.registerReportListener('haDiagnostic', 'move', this.moveCommandParser.bind(this));
+		//this.registerReportListener('lightLink', 'move', this.moveCommandParser.bind(this));
+		
+
+		//debug
+		//this.log('node', this.node);
+		// this.node.on('report', report => {
+		// 	this.log('report',report);
+		// });
+		// this.node.on('command', command => {
+		// 	if(
+		// 		(command.cluster == 'genLevelCtrl' && command.attr == 'stopWithOnOff') ||
+		// 		(command.cluster == 'genLevelCtrl' && command.attr == 'move') ||
+		// 		(command.cluster == 'genLevelCtrl' && command.attr == 'moveWithOnOff') ||
+		// 		(command.cluster == 'genLevelCtrl' && command.attr == 'moveToLevelWithOnOff')
+		// 	)
+		// 		return;
+		// 	this.log('command',command);			
+		// });		
+		//this.printNode();
 
 		// Register dimmer_rotated Flow Card Device Trigger
 		this.dimmerRotatedTriggerDevice = new Homey.FlowCardTriggerDevice('dimmer_rotated');
@@ -52,6 +77,7 @@ class RemoteRotatingDimmer extends ZigBeeDevice {
 
 	}
 
+	
 	updateSensativity(){
 		var s = this.getSetting('sensitivity');
 		if(s && !isNaN(s)) {
